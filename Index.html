@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>AEL - Рейтинг команд</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{background:#0a0c10;font-family:'Segoe UI',Arial,sans-serif;color:#fff;padding:20px;}
+        .container{max-width:1000px;margin:0 auto;}
+        .header{text-align:center;margin-bottom:30px;cursor:pointer;}
+        h1{font-size:2.5rem;background:linear-gradient(135deg,#fff,#ff6b6b,#4ecdc4);background-clip:text;-webkit-background-clip:text;color:transparent;}
+        .sub{color:#8e9bb5;font-size:0.9rem;}
+        .admin-badge{background:#1a472a;display:inline-block;padding:4px 12px;border-radius:20px;font-size:0.7rem;margin-top:8px;color:#4ecdc4;}
+        .admin-panel{background:#1a1d25;border-radius:20px;padding:20px;margin-bottom:20px;display:none;}
+        .admin-panel.show{display:block;}
+        .form-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px;}
+        .form-group{flex:1;min-width:180px;}
+        input{width:100%;padding:10px;border-radius:10px;border:none;background:#2a2e3a;color:#fff;}
+        button{padding:10px 20px;border-radius:10px;border:none;cursor:pointer;background:#4ecdc4;font-weight:bold;}
+        .btn-primary{background:#138a6e;color:#fff;}
+        .teams-grid{display:flex;flex-direction:column;gap:12px;}
+        .team-card{background:#12151e;padding:15px;border-radius:15px;display:flex;align-items:center;gap:15px;flex-wrap:wrap;border:1px solid #2a2e3a;}
+        .team-card:hover{border-color:#4ecdc4;}
+        .avatar{width:50px;height:50px;background:#2a2e3a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;overflow:hidden;}
+        .avatar img{width:100%;height:100%;object-fit:cover;}
+        .team-name{font-weight:bold;font-size:1.1rem;cursor:pointer;min-width:150px;}
+        .points{font-size:1.4rem;font-weight:bold;color:#ffd93d;min-width:70px;}
+        .points-buttons{display:flex;gap:5px;}
+        .points-buttons button{background:#2a2e3a;color:#fff;padding:5px 12px;}
+        .points-input{width:70px;text-align:center;padding:5px;}
+        .delete-btn{background:#aa3344;}
+        .action-buttons{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;}
+        .btn-sm{padding:5px 12px;font-size:0.75rem;}
+        .btn-roster{background:#2c4556;}
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);justify-content:center;align-items:center;z-index:1000;}
+        .modal-content{background:#1a1d25;padding:20px;border-radius:20px;width:90%;max-width:400px;}
+        .player-item{display:flex;justify-content:space-between;padding:8px;border-bottom:1px solid #333;}
+        .guest-note{background:#1e2538;padding:8px;text-align:center;border-radius:10px;margin:10px 0;font-size:0.75rem;}
+        @media(max-width:700px){.team-card{flex-direction:column;align-items:stretch;}.action-buttons{margin-left:0;justify-content:flex-end;}}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header" id="header">
+        <h1>🏆 AEL - Рейтинг команд</h1>
+        <div class="sub">СНГ / Мир</div>
+        <div id="adminBadge" class="admin-badge" style="background:#2a2e3a;">👥 Режим просмотра</div>
+    </div>
+
+    <div class="admin-panel" id="adminPanel">
+        <h3 style="margin-bottom:15px;">🛠 Панель администратора</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <input type="text" id="teamName" placeholder="Название команды">
+            </div>
+            <div class="form-group">
+                <input type="text" id="avatarUrl" placeholder="Ссылка на аватарку (URL)">
+            </div>
+        </div>
+        <button id="addTeamBtn" class="btn-primary">➕ Добавить команду</button>
+    </div>
+
+    <div id="teamsList" class="teams-grid"></div>
+</div>
+
+<div class="modal" id="rosterModal">
+    <div class="modal-content">
+        <h3 id="modalTitle">Состав команды</h3>
+        <div id="playersList" class="player-list"></div>
+        <div id="addPlayerForm"></div>
+        <button id="closeModal" style="margin-top:15px;">Закрыть</button>
+    </div>
+</div>
+
+<script>
+    // НАЧАЛЬНЫЕ ДАННЫЕ
+    let teams = [
+        {id: 1, name: "Team Midless", avatar: "", points: 0},
+        {id: 2, name: "Tauroda", avatar: "", points: 0},
+        {id: 3, name: "Magic spirit", avatar: "", points: 0},
+        {id: 4, name: "NEXORA TEAM", avatar: "", points: 0}
+    ];
+    let players = {1: [], 2: [], 3: [], 4: []};
+    let isAdmin = false;
+
+    // ЗАГРУЗКА ИЗ ХРАНИЛИЩА
+    function loadData() {
+        let savedTeams = localStorage.getItem("ael_teams");
+        if (savedTeams) teams = JSON.parse(savedTeams);
+        let savedPlayers = localStorage.getItem("ael_players");
+        if (savedPlayers) players = JSON.parse(savedPlayers);
+        let savedAdmin = localStorage.getItem("ael_admin");
+        if (savedAdmin === "true") isAdmin = true;
+    }
+
+    function saveAll() {
+        localStorage.setItem("ael_teams", JSON.stringify(teams));
+        localStorage.setItem("ael_players", JSON.stringify(players));
+        localStorage.setItem("ael_admin", isAdmin);
+    }
+
+    // СОРТИРОВКА ПО ОЧКАМ
+    function sortTeams() {
+        teams.sort((a, b) => b.points - a.points);
+    }
+
+    // ОТРИСОВКА ВСЕГО САЙТА
+    function render() {
+        sortTeams();
+        
+        // Показываем/скрываем админ-панель
+        let panel = document.getElementById("adminPanel");
+        let badge = document.getElementById("adminBadge");
+        if (isAdmin) {
+            panel.classList.add("show");
+            badge.innerHTML = "🔓 Администратор - полное управление";
+            badge.style.background = "#1a472a";
+        } else {
+            panel.classList.remove("show");
+            badge.innerHTML = "👥 Режим просмотра";
+            badge.style.background = "#2a2e3a";
+        }
+
+        let container = document.getElementById("teamsList");
+        let html = "";
+        
+        for (let team of teams) {
+            let avatarHtml = team.avatar ? 
+                `<img src="${team.avatar}" onerror="this.style.display='none'; this.parentElement.innerHTML='🎮'">` : 
+                "🎮";
+            
+            let pointsHtml = `<div class="points">${team.points} очков</div>`;
+            let pointsButtons = "";
+            let actionButtons = "";
+            
+            if (isAdmin) {
+                pointsButtons = `
+                    <div class="points-buttons">
+                        <button onclick="changePoints(${team.id}, -1)">-1</button>
+                        <button onclick="changePoints(${team.id}, 1)">+1</button>
+                    </div>
+                    <input type="number" class="points-input" id="pointsInput_${team.id}" value="${team.points}" onchange="setPoints(${team.id}, this.value)">
+                `;
+                actionButtons = `
+                    <div class="action-buttons">
+                        <button class="btn-sm" onclick="editTeamName(${team.id})">✏️ Название</button>
+                        <button class="btn-sm" onclick="editTeamAvatar(${team.id})">🖼️ Аватар</button>
+                        <button class="btn-sm btn-delete" onclick="deleteTeam(${team.id})">🗑 Удалить</button>
+                    </div>
+                `;
+            }
+            
+            html += `
+                <div class="team-card">
+                    <div class="avatar">${avatarHtml}</div>
+                    <div class="team-name" onclick="showRoster(${team.id})">${escapeHtml(team.name)}</div>
+                    ${pointsHtml}
+                    ${pointsButtons}
+                    <button class="btn-sm btn-roster" onclick="showRoster(${team.id})">📋 Состав</button>
+                    ${actionButtons}
+                </div>
+            `;
+        }
+        
+        if (teams.length === 0) {
+            html = '<div style="text-align:center;padding:40px;">Нет команд. Добавьте первую в админ-панели.</div>';
+        }
+        
+        container.innerHTML = html;
+    }
+
+    // ФУНКЦИИ АДМИНА
+    function changePoints(id, delta) {
+        let team = teams.find(t => t.id === id);
+        if (team) {
+            team.points = Math.max(0, team.points + delta);
+            saveAll();
+            render();
+        }
+    }
+
+    function setPoints(id, value) {
+        let team = teams.find(t => t.id === id);
+        if (team) {
+            team.points = Math.max(0, parseInt(value) || 0);
+            saveAll();
+            render();
+        }
+    }
+
+    function deleteTeam(id) {
+        if (confirm("Удалить команду и всех её игроков?")) {
+            teams = teams.filter(t => t.id !== id);
+            delete players[id];
+            saveAll();
+            render();
+        }
+    }
+
+    function editTeamName(id) {
+        let team = teams.find(t => t.id === id);
+        if (team) {
+            let newName = prompt("Введите новое название команды:", team.name);
+            if (newName && newName.trim()) {
+                team.name = newName.trim();
+                saveAll();
+                render();
+            }
+        }
+    }
+
+    function editTeamAvatar(id) {
+        let team = teams.find(t => t.id === id);
+        if (team) {
+            let newAvatar = prompt("Введите ссылку на новую аватарку:", team.avatar);
+            if (newAvatar !== null) {
+                team.avatar = newAvatar.trim();
+                saveAll();
+                render();
+            }
+        }
+    }
+
+    function addTeam() {
+        let name = document.getElementById("teamName").value;
+        let avatar = document.getElementById("avatarUrl").value;
+        if (!name.trim()) {
+            alert("Введите название команды!");
+            return;
+        }
+        let newId = Date.now();
+        teams.push({
+            id: newId,
+            name: name.trim(),
+            avatar: avatar.trim(),
+            points: 0
+        });
+        players[newId] = [];
+        saveAll();
+        render();
+        document.getElementById("teamName").value = "";
+        document.getElementById("avatarUrl").value = "";
+    }
+
+    // СОСТАВ КОМАНДЫ
+    let currentTeamId = null;
+
+    function showRoster(teamId) {
+        currentTeamId = teamId;
+        let team = teams.find(t => t.id === teamId);
+        let teamPlayers = players[teamId] || [];
+        
+        let modal = document.getElementById("rosterModal");
+        let title = document.getElementById("modalTitle");
+        let playersList = document.getElementById("playersList");
+        let addForm = document.getElementById("addPlayerForm");
+        
+        title.innerHTML = `📋 Состав команды: ${escapeHtml(team.name)}`;
+        
+        let playersHtml = "";
+        for (let i = 0; i < teamPlayers.length; i++) {
+            playersHtml += `
+                <div class="player-item">
+                    <span>🎮 ${escapeHtml(teamPlayers[i])}</span>
+                    ${isAdmin ? `<button onclick="removePlayer(${teamId}, ${i})" style="background:#aa3344;padding:5px 10px;">🗑</button>` : ""}
+                </div>
+            `;
+        }
+        
+        if (teamPlayers.length === 0) {
+            playersHtml = '<div style="padding:20px;text-align:center;">Нет игроков</div>';
+        }
+        
+        playersList.innerHTML = playersHtml;
+        
+        if (isAdmin) {
+            addForm.innerHTML = `
+                <div style="display:flex; gap:10px; margin-top:15px;">
+                    <input type="text" id="newPlayerName" placeholder="Ник игрока" style="flex:1;padding:8px;">
+                    <button onclick="addPlayer()" class="btn-primary">➕ Добавить</button>
+                </div>
+            `;
+        } else {
+            addForm.innerHTML = '<div class="guest-note">👁️ Режим просмотра — вы не можете редактировать состав</div>';
+        }
+        
+        modal.style.display = "flex";
+    }
+
+    function addPlayer() {
+        let input = document.getElementById("newPlayerName");
+        let nick = input.value.trim();
+        if (nick && currentTeamId) {
+            if (!players[currentTeamId]) players[currentTeamId] = [];
+            players[currentTeamId].push(nick);
+            saveAll();
+            showRoster(currentTeamId);
+            input.value = "";
+        } else if (!nick) {
+            alert("Введите ник игрока!");
+        }
+    }
+
+    function removePlayer(teamId, index) {
+        if (players[teamId]) {
+            players[teamId].splice(index, 1);
+            saveAll();
+            showRoster(teamId);
+        }
+    }
+
+    // АКТИВАЦИЯ АДМИНА (7 КЛИКОВ ПО ЗАГОЛОВКУ)
+    let clickCount = 0;
+    let clickTimer = null;
+
+    function setupAdminActivation() {
+        let header = document.getElementById("header");
+        if (!header) return;
+        
+        header.addEventListener("click", () => {
+            clickCount++;
+            if (clickTimer) clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => {
+                clickCount = 0;
+            }, 800);
+            
+            if (clickCount >= 7) {
+                if (!isAdmin) {
+                    isAdmin = true;
+                    saveAll();
+                    render();
+                    alert("🔓 Админ-режим активирован навсегда! Теперь вы можете управлять командами.");
+                } else {
+                    alert("Админ-режим уже активен");
+                }
+                clickCount = 0;
+            }
+        });
+    }
+
+    // ЗАКРЫТИЕ МОДАЛКИ
+    document.getElementById("closeModal").onclick = () => {
+        document.getElementById("rosterModal").style.display = "none";
+    };
+
+    // НАЖАТИЕ НА МОДАЛКУ ДЛЯ ЗАКРЫТИЯ
+    window.onclick = (e) => {
+        let modal = document.getElementById("rosterModal");
+        if (e.target === modal) {
+            modal.style.display = "none";
+        }
+    };
+
+    function escapeHtml(str) {
+        if (!str) return "";
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // ЗАПУСК
+    loadData();
+    sortTeams();
+    render();
+    setupAdminActivation();
+    document.getElementById("addTeamBtn").onclick = addTeam;
+</script>
+</body>
+</html><!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>AEL - Рейтинг команд</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{background:#0a0c10;font-family:'Segoe UI',Arial,sans-serif;color:#fff;padding:20px;}
+        .container{max-width:1000px;margin:0 auto;}
+        .header{text-align:center;margin-bottom:30px;cursor:pointer;}
+        h1{font-size:2.5rem;background:linear-gradient(135deg,#fff,#ff6b6b,#4ecdc4);background-clip:text;-webkit-background-clip:text;color:transparent;}
+        .sub{color:#8e9bb5;font-size:0.9rem;}
+        .admin-badge{background:#1a472a;display:inline-block;padding:4px 12px;border-radius:20px;font-size:0.7rem;margin-top:8px;color:#4ecdc4;}
+        .admin-panel{background:#1a1d25;border-radius:20px;padding:20px;margin-bottom:20px;display:none;}
+        .admin-panel.show{display:block;}
+        .form-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px;}
+        .form-group{flex:1;min-width:180px;}
+        input{width:100%;padding:10px;border-radius:10px;border:none;background:#2a2e3a;color:#fff;}
+        button{padding:10px 20px;border-radius:10px;border:none;cursor:pointer;background:#4ecdc4;font-weight:bold;}
+        .btn-primary{background:#138a6e;color:#fff;}
+        .teams-grid{display:flex;flex-direction:column;gap:12px;}
+        .team-card{background:#12151e;padding:15px;border-radius:15px;display:flex;align-items:center;gap:15px;flex-wrap:wrap;border:1px solid #2a2e3a;}
+        .team-card:hover{border-color:#4ecdc4;}
+        .avatar{width:50px;height:50px;background:#2a2e3a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;overflow:hidden;}
+        .avatar img{width:100%;height:100%;object-fit:cover;}
+        .team-name{font-weight:bold;font-size:1.1rem;cursor:pointer;min-width:150px;}
+        .points{font-size:1.4rem;font-weight:bold;color:#ffd93d;min-width:70px;}
+        .points-buttons{display:flex;gap:5px;}
+        .points-buttons button{background:#2a2e3a;color:#fff;padding:5px 12px;}
+        .points-input{width:70px;text-align:center;padding:5px;}
+        .delete-btn{background:#aa3344;}
+        .action-buttons{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;}
+        .btn-sm{padding:5px 12px;font-size:0.75rem;}
+        .btn-roster{background:#2c4556;}
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);justify-content:center;align-items:center;z-index:1000;}
+        .modal-content{background:#1a1d25;padding:20px;border-radius:20px;width:90%;max-width:400px;}
+        .player-item{display:flex;justify-content:space-between;padding:8px;border-bottom:1px solid #333;}
+        .guest-note{background:#1e2538;padding:8px;text-align:center;border-radius:10px;margin:10px 0;font-size:0.75rem;}
+        @media(max-width:700px){.team-card{flex-direction:column;align-items:stretch;}.action-buttons{margin-left:0;justify-content:flex-end;}}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header" id="header">
+        <h1>🏆 AEL - Рейтинг команд</h1>
+        <div class="sub">СНГ / Мир</div>
+        <div id="adminBadge" class="admin-badge" style="background:#2a2e3a;">👥 Режим просмотра</div>
+    </div>
+
+    <div class="admin-panel" id="adminPanel">
+        <h3 style="margin-bottom:15px;">🛠 Панель администратора</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <input type="text" id="teamName" placeholder="Название команды">
+            </div>
+            <div class="form-group">
+                <input type="text" id="avatarUrl" placeholder="Ссылка на аватарку (URL)">
+            </div>
+        </div>
+        <button id="addTeamBtn" class="btn-primary">➕ Добавить команду</button>
+    </div>
+
+    <div id="teamsList" class="teams-grid"></div>
+</div>
+
+<div class="modal" id="rosterModal">
+    <div class="modal-content">
+        <h3 id="modalTitle">Состав команды</h3>
+        <div id="playersList" class="player-list"></div>
+        <div id="addPlayerForm"></div>
+        <button id="closeModal" style="margin-top:15px;">Закрыть</button>
+    </div>
+</div>
+
+<script>
+    // НАЧАЛЬНЫЕ ДАННЫЕ
+    let teams = [
+        {id: 1, name: "Team Midless", avatar: "", points: 0},
+        {id: 2, name: "Tauroda", avatar: "", points: 0},
+        {id: 3, name: "Magic spirit", avatar: "", points: 0},
+        {id: 4, name: "NEXORA TEAM", avatar: "", points: 0}
+    ];
+    let players = {1: [], 2: [], 3: [], 4: []};
+    let isAdmin = false;
+
+    // ЗАГРУЗКА ИЗ ХРАНИЛИЩА
+    function loadData() {
+        let savedTeams = localStorage.getItem("ael_teams");
+        if (savedTeams) teams = JSON.parse(savedTeams);
+        let savedPlayers = localStorage.getItem("ael_players");
+        if (savedPlayers) players = JSON.parse(savedPlayers);
+        let savedAdmin = localStorage.getItem("ael_admin");
+        if (savedAdmin === "true") isAdmin = true;
+    }
+
+    function saveAll() {
+        localStorage.setItem("ael_teams", JSON.stringify(teams));
+        localStorage.setItem("ael_players", JSON.stringify(players));
+        localStorage.setItem("ael_admin", isAdmin);
+    }
+
+    // СОРТИРОВКА ПО ОЧКАМ
+    function sortTeams() {
+        teams.sort((a, b) => b.points - a.points);
+    }
+
+    // ОТРИСОВКА ВСЕГО САЙТА
+    function render() {
+        sortTeams();
+        
+        // Показываем/скрываем админ-панель
+        let panel = document.getElementById("adminPanel");
+        let badge = document.getElementById("adminBadge");
+        if (isAdmin) {
+            panel.classList.add("show");
+            badge.innerHTML = "🔓 Администратор - полное управление";
+            badge.style.background = "#1a472a";
+        } else {
+            panel.classList.remove("show");
+            badge.innerHTML = "👥 Режим просмотра";
+            badge.style.background = "#2a2e3a";
+        }
+
+        let container = document.getElementById("teamsList");
+        let html = "";
+        
+        for (let team of teams) {
+            let avatarHtml = team.avatar ? 
+                `<img src="${team.avatar}" onerror="this.style.display='none'; this.parentElement.innerHTML='🎮'">` : 
+                "🎮";
+            
+            let pointsHtml = `<div class="points">${team.points} очков</div>`;
+            let pointsButtons = "";
+            let actionButtons = "";
+            
+            if (isAdmin) {
+                pointsButtons = `
+                    <div class="points-buttons">
+                        <button onclick="changePoints(${team.id}, -1)">-1</button>
+                        <button onclick="changePoints(${team.id}, 1)">+1</button>
+                    </div>
+                    <input type="number" class="points-input" id="pointsInput_${team.id}" value="${team.points}" onchange="setPoints(${team.id}, this.value)">
+                `;
+                actionButtons = `
+                    <div class="action-buttons">
+                        <button class="btn-sm" onclick="editTeamName(${team.id})">✏️ Название</button>
+                        <button class="btn-sm" onclick="editTeamAvatar(${team.id})">🖼️ Аватар</button>
+                        <button class="btn-sm btn-delete" onclick="deleteTeam(${team.id})">🗑 Удалить</button>
+                    </div>
+                `;
+            }
+            
+            html += `
+                <div class="team-card">
+                    <div class="avatar">${avatarHtml}</div>
+                    <div class="team-name" onclick="showRoster(${team.id})">${escapeHtml(team.name)}</div>
+                    ${pointsHtml}
+                    ${pointsButtons}
+                    <button class="btn-sm btn-roster" onclick="showRoster(${team.id})">📋 Состав</button>
+                    ${actionButtons}
+                </div>
+            `;
+        }
+        
+        if (teams.length === 0) {
+            html = '<div style="text-align:center;padding:40px;">Нет команд. Добавьте первую в админ-панели.</div>';
+        }
+        
+        container.innerHTML = html;
+    }
+
+    // ФУНКЦИИ АДМИНА
+    function changePoints(id, delta) {
+        let team = teams.find(t => t.id === id);
+        if (team) {
+            team.points = Math.max(0, team.points + delta);
+            saveAll();
+            render();
+        }
+    }
+
+    function setPoints(id, value) {
+        let team = teams.find(t => t.id === id);
+        if (team) {
+            team.points = Math.max(0, parseInt(value) || 0);
+            saveAll();
+            render();
+        }
+    }
+
+    function deleteTeam(id) {
+        if (confirm("Удалить команду и всех её игроков?")) {
+            teams = teams.filter(t => t.id !== id);
+            delete players[id];
+            saveAll();
+            render();
+        }
+    }
+
+    function editTeamName(id) {
+        let team = teams.find(t => t.id === id);
+        if (team) {
+            let newName = prompt("Введите новое название команды:", team.name);
+            if (newName && newName.trim()) {
+                team.name = newName.trim();
+                saveAll();
+                render();
+            }
+        }
+    }
+
+    function editTeamAvatar(id) {
+        let team = teams.find(t => t.id === id);
+        if (team) {
+            let newAvatar = prompt("Введите ссылку на новую аватарку:", team.avatar);
+            if (newAvatar !== null) {
+                team.avatar = newAvatar.trim();
+                saveAll();
+                render();
+            }
+        }
+    }
+
+    function addTeam() {
+        let name = document.getElementById("teamName").value;
+        let avatar = document.getElementById("avatarUrl").value;
+        if (!name.trim()) {
+            alert("Введите название команды!");
+            return;
+        }
+        let newId = Date.now();
+        teams.push({
+            id: newId,
+            name: name.trim(),
+            avatar: avatar.trim(),
+            points: 0
+        });
+        players[newId] = [];
+        saveAll();
+        render();
+        document.getElementById("teamName").value = "";
+        document.getElementById("avatarUrl").value = "";
+    }
+
+    // СОСТАВ КОМАНДЫ
+    let currentTeamId = null;
+
+    function showRoster(teamId) {
+        currentTeamId = teamId;
+        let team = teams.find(t => t.id === teamId);
+        let teamPlayers = players[teamId] || [];
+        
+        let modal = document.getElementById("rosterModal");
+        let title = document.getElementById("modalTitle");
+        let playersList = document.getElementById("playersList");
+        let addForm = document.getElementById("addPlayerForm");
+        
+        title.innerHTML = `📋 Состав команды: ${escapeHtml(team.name)}`;
+        
+        let playersHtml = "";
+        for (let i = 0; i < teamPlayers.length; i++) {
+            playersHtml += `
+                <div class="player-item">
+                    <span>🎮 ${escapeHtml(teamPlayers[i])}</span>
+                    ${isAdmin ? `<button onclick="removePlayer(${teamId}, ${i})" style="background:#aa3344;padding:5px 10px;">🗑</button>` : ""}
+                </div>
+            `;
+        }
+        
+        if (teamPlayers.length === 0) {
+            playersHtml = '<div style="padding:20px;text-align:center;">Нет игроков</div>';
+        }
+        
+        playersList.innerHTML = playersHtml;
+        
+        if (isAdmin) {
+            addForm.innerHTML = `
+                <div style="display:flex; gap:10px; margin-top:15px;">
+                    <input type="text" id="newPlayerName" placeholder="Ник игрока" style="flex:1;padding:8px;">
+                    <button onclick="addPlayer()" class="btn-primary">➕ Добавить</button>
+                </div>
+            `;
+        } else {
+            addForm.innerHTML = '<div class="guest-note">👁️ Режим просмотра — вы не можете редактировать состав</div>';
+        }
+        
+        modal.style.display = "flex";
+    }
+
+    function addPlayer() {
+        let input = document.getElementById("newPlayerName");
+        let nick = input.value.trim();
+        if (nick && currentTeamId) {
+            if (!players[currentTeamId]) players[currentTeamId] = [];
+            players[currentTeamId].push(nick);
+            saveAll();
+            showRoster(currentTeamId);
+            input.value = "";
+        } else if (!nick) {
+            alert("Введите ник игрока!");
+        }
+    }
+
+    function removePlayer(teamId, index) {
+        if (players[teamId]) {
+            players[teamId].splice(index, 1);
+            saveAll();
+            showRoster(teamId);
+        }
+    }
+
+    // АКТИВАЦИЯ АДМИНА (7 КЛИКОВ ПО ЗАГОЛОВКУ)
+    let clickCount = 0;
+    let clickTimer = null;
+
+    function setupAdminActivation() {
+        let header = document.getElementById("header");
+        if (!header) return;
+        
+        header.addEventListener("click", () => {
+            clickCount++;
+            if (clickTimer) clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => {
+                clickCount = 0;
+            }, 800);
+            
+            if (clickCount >= 7) {
+                if (!isAdmin) {
+                    isAdmin = true;
+                    saveAll();
+                    render();
+                    alert("🔓 Админ-режим активирован навсегда! Теперь вы можете управлять командами.");
+                } else {
+                    alert("Админ-режим уже активен");
+                }
+                clickCount = 0;
+            }
+        });
+    }
+
+    // ЗАКРЫТИЕ МОДАЛКИ
+    document.getElementById("closeModal").onclick = () => {
+        document.getElementById("rosterModal").style.display = "none";
+    };
+
+    // НАЖАТИЕ НА МОДАЛКУ ДЛЯ ЗАКРЫТИЯ
+    window.onclick = (e) => {
+        let modal = document.getElementById("rosterModal");
+        if (e.target === modal) {
+            modal.style.display = "none";
+        }
+    };
+
+    function escapeHtml(str) {
+        if (!str) return "";
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // ЗАПУСК
+    loadData();
+    sortTeams();
+    render();
+    setupAdminActivation();
+    document.getElementById("addTeamBtn").onclick = addTeam;
+</script>
+</body>
+</html>
